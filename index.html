@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>ゆるToDo</title>
+<style>
+  :root {
+    --bg: #f6f3ee;
+    --card: #fffdf9;
+    --ink: #2f2a25;
+    --sub: #8a8178;
+    --line: #e4ddd3;
+    --accent: #c9703d;
+    --accent-soft: #f6e4d8;
+    --field: #fbf8f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1d1b19;
+      --card: #272421;
+      --ink: #ece6de;
+      --sub: #9c9389;
+      --line: #3a3530;
+      --accent: #e08a55;
+      --accent-soft: #3b2c22;
+      --field: #211f1c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  .tagline { color: var(--sub); font-size: 12px; }
+
+  .tabs { display: flex; background: var(--line); border-radius: 999px; padding: 3px; margin-bottom: 14px; }
+  .tabs button {
+    flex: 1; border: 0; background: transparent; color: var(--sub);
+    font: inherit; font-size: 15px; padding: 7px 0; border-radius: 999px; cursor: pointer;
+  }
+  .tabs button.on { background: var(--card); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px 18px; }
+  .nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .nav button {
+    border: 0; background: transparent; color: var(--sub); font-size: 22px;
+    width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+  }
+  .nav button:active { background: var(--accent-soft); }
+  .when { text-align: center; }
+  .when .rel { display: block; font-size: 12px; color: var(--accent); font-weight: 600; min-height: 1em; }
+  .when .abs { font-size: 18px; font-weight: 600; }
+
+  label { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 4px; }
+  textarea {
+    width: 100%; min-height: 64px; resize: none; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink);
+    font: inherit; padding: 10px 12px;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  textarea::placeholder { color: var(--sub); opacity: .6; }
+
+  .status { text-align: right; font-size: 12px; color: var(--sub); height: 18px; margin-top: 8px; }
+  .weekpeek { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 14px; white-space: pre-wrap; }
+  .weekpeek b { display: block; font-size: 12px; color: var(--accent); margin-bottom: 2px; }
+  .hint { color: var(--sub); font-size: 12px; margin-top: 18px; text-align: center; }
+  .hidden { display: none; }
+
+  button.link { border: 0; background: none; color: var(--sub); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; padding: 4px; }
+  #setupView { margin-top: 8px; }
+  #setupView h2 { font-size: 17px; margin: 2px 0 8px; }
+  .steps { padding-left: 1.3em; margin: 0 0 12px; font-size: 14px; }
+  .steps li { margin-bottom: 4px; }
+  .topic { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .topic code {
+    flex: 1; min-width: 0; overflow-wrap: anywhere; user-select: all;
+    background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 14px;
+  }
+  .btn {
+    border: 0; border-radius: 10px; background: var(--accent); color: #fff;
+    font: inherit; font-size: 14px; font-weight: 600; padding: 9px 14px; cursor: pointer; white-space: nowrap;
+  }
+  .btn.wide { width: 100%; }
+  .note { font-size: 12px; color: var(--sub); margin: 8px 0 0; }
+  .note a { color: var(--accent); }
+  .label { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  .note.first { margin: 0 0 4px; }
+  body:not(.first-run) .note.first { display: none; }
+  .blocked { padding: 24px 4px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ゆるToDo</h1>
+    <span class="tagline">書いても書かなくてもいい</span>
+  </header>
+
+  <div class="tabs">
+    <button id="tabDay" class="on">日</button>
+    <button id="tabWeek">週</button>
+  </div>
+
+  <section id="dayView" class="card">
+    <div class="nav">
+      <button id="dayPrev" aria-label="前の日">‹</button>
+      <div class="when"><span class="rel" id="dayRel"></span><span class="abs" id="dayAbs">…</span></div>
+      <button id="dayNext" aria-label="次の日">›</button>
+    </div>
+    <label for="d_plan">予定</label>
+    <textarea id="d_plan" placeholder="14時 歯医者"></textarea>
+    <label for="d_must">やること</label>
+    <textarea id="d_must" placeholder="電気代の振込"></textarea>
+    <label for="d_want">やりたいこと</label>
+    <textarea id="d_want" placeholder="帰りに銭湯"></textarea>
+    <div class="weekpeek hidden" id="weekPeek"></div>
+    <div class="status" id="dayStatus"></div>
+  </section>
+
+  <section id="weekView" class="card hidden">
+    <div class="nav">
+      <button id="weekPrev" aria-label="前の週">‹</button>
+      <div class="when"><span class="rel" id="weekRel"></span><span class="abs" id="weekAbs">…</span></div>
+      <button id="weekNext" aria-label="次の週">›</button>
+    </div>
+    <label for="w_must">やること</label>
+    <textarea id="w_must" placeholder="確定申告の書類そろえる"></textarea>
+    <label for="w_want">やりたいこと</label>
+    <textarea id="w_want" placeholder="週末に新しい店開拓"></textarea>
+    <div class="status" id="weekStatus"></div>
+  </section>
+
+  <p class="hint">1行に1つずつ。書いたら勝手に保存されるよ。</p>
+  <p class="hint"><button class="link" id="setupToggle">通知の設定</button></p>
+
+  <section id="setupView" class="card hidden">
+    <h2 id="setupTitle">通知の設定</h2>
+    <p class="label">このアプリのURL（合言葉付き）</p>
+    <div class="topic">
+      <code id="appUrl">…</code>
+      <button class="btn" id="copyUrl">コピー</button>
+    </div>
+    <p class="note first">このページのURLに合言葉が入ってるので、ブックマークかホーム画面に追加しておいてね。人には教えないこと。</p>
+    <p class="label">通知を受け取る</p>
+    <ol class="steps">
+      <li>スマホに <b>ntfy</b> アプリを入れる（無料）</li>
+      <li>アプリの＋から、下のトピック名を購読する（サーバーはそのまま）</li>
+      <li>下のボタンでテスト通知を送って、届けば完了</li>
+    </ol>
+    <div class="topic">
+      <code id="topic">…</code>
+      <button class="btn" id="copyTopic">コピー</button>
+    </div>
+    <button class="btn wide" id="testNotify">テスト通知を送る</button>
+    <div class="status" id="setupStatus"></div>
+    <p class="note" id="holidayNote"></p>
+    <p class="note">データの保存先: <a id="sheetLink" target="_blank" rel="noopener">スプレッドシート</a>（年末年始や有休は Offdays シートに日付を書くと休日扱いになる）</p>
+    <p class="note">トピック名を知ってる人は通知の中身を読めちゃうので、人には教えないでね。</p>
+  </section>
+</div>
+
+<script>
+  // 接続先（Apps ScriptのURL）と合言葉はURLの # 以降で受け取る: #u=...&k=...&focus=...
+  // ホーム画面から開いたときに # が落ちても大丈夫なように、この端末にも覚えておく
+  function store(name, value) {
+    try {
+      if (value === undefined) return localStorage.getItem('yurutodo.' + name) || '';
+      localStorage.setItem('yurutodo.' + name, value);
+    } catch (e) { return ''; }
+  }
+  var hash = {};
+  location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
+    var i = kv.indexOf('=');
+    if (i > 0) hash[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+  });
+  var API_URL = hash.u || store('u');
+  var KEY = hash.k || store('k');
+  var FOCUS = hash.focus || '';
+  if (hash.u && hash.k) { store('u', hash.u); store('k', hash.k); }
+  // 通知から開いたときの focus はブックマークに残したくないので外しておく
+  if (API_URL && KEY && history.replaceState) {
+    history.replaceState(null, '', location.pathname + '#u=' + encodeURIComponent(API_URL) + '&k=' + KEY);
+  }
+  var FIRST_RUN = !store('seenSetup');
+  if (FIRST_RUN) document.body.classList.add('first-run');
+  var DAY_FIELDS = ['plan', 'must', 'want'];
+  var WEEK_FIELDS = ['must', 'want'];
+  var WEEK_LABELS = { must: 'やること', want: 'やりたいこと' };
+
+  var state = { today: null, thisWeek: null, day: null, week: null };
+
+  // ---- 日付（'yyyy-MM-dd' をUTCで計算）
+  function parse(s) { var p = s.split('-'); return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])); }
+  function fmt(d) { return d.toISOString().slice(0, 10); }
+  function add(s, n) { var d = parse(s); d.setUTCDate(d.getUTCDate() + n); return fmt(d); }
+  function diff(a, b) { return Math.round((parse(a) - parse(b)) / 86400000); }
+  function weekKey(s) { var w = parse(s).getUTCDay(); return add(s, w === 0 ? -6 : 1 - w); }
+  function md(s) { var d = parse(s); return (d.getUTCMonth() + 1) + '/' + d.getUTCDate(); }
+  function label(s) { return md(s) + '(' + '日月火水木金土'.charAt(parse(s).getUTCDay()) + ')'; }
+
+  function dayRel(s) {
+    var n = diff(s, state.today);
+    return { '-1': 'きのう', '0': 'きょう', '1': 'あした', '2': 'あさって' }[n] || '';
+  }
+  function weekRel(k) {
+    var n = diff(k, state.thisWeek) / 7;
+    return { '-1': '先週', '0': '今週', '1': '来週' }[n] || '';
+  }
+
+  // ---- サーバー呼び出し（Apps Script の doPost へ）
+  // Content-Type を text/plain にしておくと、ブラウザの事前確認(preflight)が走らずに Apps Script へそのまま届く
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: fn.replace(/^api_/, ''), args: args, k: KEY })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.ok) throw new Error(j.error || 'unknown error');
+      return j.data;
+    });
+  }
+
+  // ---- 自動保存（入力が止まって0.8秒後。ページ移動前にも必ず保存）
+  function makeEditor(prefix, fields, keyOf, saveFn, statusEl) {
+    var timer = null, dirty = false, saving = Promise.resolve();
+    var els = fields.map(function (f) { return document.getElementById(prefix + f); });
+    function values() { var o = {}; fields.forEach(function (f, i) { o[f] = els[i].value; }); return o; }
+    function flush() {
+      clearTimeout(timer);
+      if (!dirty) return saving;
+      dirty = false;
+      // 保存先の日付/週は「保存を予約した時点」のものを使う（直後にページ移動しても混ざらない）
+      var v = values(), key = keyOf();
+      statusEl.textContent = '保存中…';
+      saving = saving.then(function () { return saveFn(key, v); }).then(function () {
+        if (!dirty) statusEl.textContent = '保存したよ';
+      }, function () {
+        dirty = true;
+        statusEl.textContent = '保存できなかった…電波かも';
+      });
+      return saving;
+    }
+    els.forEach(function (el) {
+      el.addEventListener('input', function () {
+        grow(el);
+        dirty = true;
+        statusEl.textContent = '';
+        clearTimeout(timer);
+        timer = setTimeout(flush, 800);
+      });
+      el.addEventListener('blur', flush);
+    });
+    return {
+      flush: flush,
+      fill: function (rec) {
+        els.forEach(function (el, i) { el.value = rec[fields[i]] || ''; grow(el); });
+        statusEl.textContent = '';
+      },
+      setDisabled: function (b) { els.forEach(function (el) { el.disabled = b; }); }
+    };
+  }
+
+  function grow(el) { el.style.height = 'auto'; el.style.height = Math.max(64, el.scrollHeight + 2) + 'px'; }
+
+  var dayEditor = makeEditor('d_', DAY_FIELDS, function () { return state.day; },
+    function (k, v) { return call('api_saveDaily', k, v); },
+    document.getElementById('dayStatus'));
+  var weekEditor = makeEditor('w_', WEEK_FIELDS, function () { return state.week; },
+    function (k, v) { return call('api_saveWeekly', k, v); },
+    document.getElementById('weekStatus'));
+
+  // ---- 表示
+  function showDay(s) {
+    return dayEditor.flush().then(function () {
+      state.day = s;
+      document.getElementById('dayRel').textContent = dayRel(s);
+      document.getElementById('dayAbs').textContent = label(s);
+      dayEditor.setDisabled(true);
+      return Promise.all([call('api_getDaily', s), call('api_getWeekly', weekKey(s))]);
+    }).then(function (res) {
+      if (state.day !== s) return;
+      dayEditor.fill(res[0]);
+      dayEditor.setDisabled(false);
+      var peek = document.getElementById('weekPeek');
+      var text = WEEK_FIELDS.filter(function (f) { return res[1][f].trim(); })
+        .map(function (f) { return '【' + WEEK_LABELS[f] + '】' + res[1][f].trim().split('\n').join(' / '); })
+        .join('\n');
+      peek.innerHTML = '';
+      if (text) {
+        var b = document.createElement('b'); b.textContent = 'この週のメモ';
+        peek.appendChild(b); peek.appendChild(document.createTextNode(text));
+      }
+      peek.classList.toggle('hidden', !text);
+    });
+  }
+
+  function showWeek(k) {
+    return weekEditor.flush().then(function () {
+      state.week = k;
+      document.getElementById('weekRel').textContent = weekRel(k);
+      document.getElementById('weekAbs').textContent = md(k) + '〜' + md(add(k, 6));
+      weekEditor.setDisabled(true);
+      return call('api_getWeekly', k);
+    }).then(function (rec) {
+      if (state.week !== k) return;
+      weekEditor.fill(rec);
+      weekEditor.setDisabled(false);
+    });
+  }
+
+  function switchTab(name) {
+    var day = name === 'day';
+    document.getElementById('tabDay').classList.toggle('on', day);
+    document.getElementById('tabWeek').classList.toggle('on', !day);
+    document.getElementById('dayView').classList.toggle('hidden', !day);
+    document.getElementById('weekView').classList.toggle('hidden', day);
+    // 週のメモを書いて日タブに戻ったとき、「この週のメモ」欄を最新にする
+    if (day && state.day) weekEditor.flush().then(function () { showDay(state.day); });
+    else if (!day) dayEditor.flush();
+  }
+
+  document.getElementById('tabDay').onclick = function () { switchTab('day'); };
+  document.getElementById('tabWeek').onclick = function () { switchTab('week'); };
+  document.getElementById('dayPrev').onclick = function () { showDay(add(state.day, -1)); };
+  document.getElementById('dayNext').onclick = function () { showDay(add(state.day, 1)); };
+  document.getElementById('weekPrev').onclick = function () { showWeek(add(state.week, -7)); };
+  document.getElementById('weekNext').onclick = function () { showWeek(add(state.week, 7)); };
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') { dayEditor.flush(); weekEditor.flush(); }
+  });
+
+  // ---- 通知の設定
+  var setupLoaded = false;
+  function toggleSetup(open) {
+    var view = document.getElementById('setupView');
+    view.classList.toggle('hidden', !open);
+    if (open && !setupLoaded) {
+      setupLoaded = true;
+      call('api_getSetupInfo').then(function (info) {
+        document.getElementById('topic').textContent = info.topic || '（未作成）';
+        document.getElementById('sheetLink').href = info.sheetUrl;
+        document.getElementById('appUrl').textContent = info.appUrl || '（まだわからない。一度閉じて開き直してみて）';
+        document.getElementById('holidayNote').textContent = info.holidayOk
+          ? '祝日カレンダー: 読み込めてる'
+          : '祝日カレンダーが読み込めてないので、いまは土日とOffdaysシートだけで休日判定してる。Googleカレンダーで「日本の祝日」を追加すれば直る。';
+      });
+    }
+    if (open) view.scrollIntoView({ behavior: 'smooth' });
+  }
+  document.getElementById('setupToggle').onclick = function () {
+    toggleSetup(document.getElementById('setupView').classList.contains('hidden'));
+  };
+  function copyFrom(id) {
+    var text = document.getElementById(id).textContent;
+    var st = document.getElementById('setupStatus');
+    function ng() { st.textContent = 'コピーできなかった…長押しで選択してね'; }
+    try {
+      navigator.clipboard.writeText(text).then(function () { st.textContent = 'コピーした'; }, ng);
+    } catch (e) { ng(); }
+  }
+  document.getElementById('copyTopic').onclick = function () { copyFrom('topic'); };
+  document.getElementById('copyUrl').onclick = function () { copyFrom('appUrl'); };
+  document.getElementById('testNotify').onclick = function () {
+    var st = document.getElementById('setupStatus');
+    st.textContent = '送信中…';
+    call('api_testNotify').then(function () {
+      st.textContent = '送ったよ。届いた？';
+      store('seenSetup', '1');
+    }, function () { st.textContent = '送れなかった…'; });
+  };
+
+  // ---- 起動
+  if (!API_URL || !KEY) {
+    document.querySelector('.wrap').innerHTML =
+      '<header><h1>ゆるToDo</h1></header>' +
+      '<p class="blocked">合言葉付きのリンクから開いてね。<br>' +
+      'わからなくなったら、Apps Script のエディタで <code>showUrl</code> を実行するとログに出るよ。</p>';
+    throw new Error('no config');
+  }
+  if (FIRST_RUN) {
+    document.getElementById('setupTitle').textContent = 'はじめまして。あと少しで準備おわり';
+    toggleSetup(true);
+  }
+
+  call('api_init').then(function (init) {
+    state.today = init.today;
+    state.thisWeek = init.thisWeek;
+    // 通知から開いたときはその内容に合わせる。普通に開いたときは夕方以降なら明日のページ
+    var startDay = FOCUS === 'today' ? init.today
+      : (FOCUS === 'tomorrow' || new Date().getHours() >= 17) ? init.tomorrow : init.today;
+    showDay(startDay);
+    showWeek(init.defaultWeek);
+    if (FOCUS === 'week') switchTab('week');
+  }, function (e) {
+    document.getElementById('dayAbs').textContent = '読み込めなかった…';
+    document.getElementById('dayStatus').textContent = String(e && e.message || e);
+  });
+</script>
+</body>
+</html>
