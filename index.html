@@ -151,20 +151,23 @@
     </div>
     <p class="note first">このページのURLに合言葉が入ってるので、ブックマークかホーム画面に追加しておいてね。人には教えないこと。</p>
     <p class="label">通知を受け取る</p>
-    <ol class="steps">
-      <li>スマホに <b>ntfy</b> アプリを入れる（無料）</li>
-      <li>アプリの＋から、下のトピック名を購読する（サーバーはそのまま）</li>
-      <li>下のボタンでテスト通知を送って、届けば完了</li>
-    </ol>
-    <div class="topic">
-      <code id="topic">…</code>
-      <button class="btn" id="copyTopic">コピー</button>
+    <p class="note hidden" id="viaLine">通知は LINE で届くよ。下のボタンでテスト通知を送って、LINEに届けばOK。</p>
+    <div id="viaNtfy">
+      <ol class="steps">
+        <li>スマホに <b>ntfy</b> アプリを入れる（無料）</li>
+        <li>アプリの＋から、下のトピック名を購読する（サーバーはそのまま）</li>
+        <li>下のボタンでテスト通知を送って、届けば完了</li>
+      </ol>
+      <div class="topic">
+        <code id="topic">…</code>
+        <button class="btn" id="copyTopic">コピー</button>
+      </div>
+      <p class="note">トピック名を知ってる人は通知の中身を読めちゃうので、人には教えないでね。</p>
     </div>
     <button class="btn wide" id="testNotify">テスト通知を送る</button>
     <div class="status" id="setupStatus"></div>
     <p class="note" id="holidayNote"></p>
     <p class="note">データの保存先: <a id="sheetLink" target="_blank" rel="noopener">スプレッドシート</a>（年末年始や有休は Offdays シートに日付を書くと休日扱いになる）</p>
-    <p class="note">トピック名を知ってる人は通知の中身を読めちゃうので、人には教えないでね。</p>
   </section>
 </div>
 
@@ -182,13 +185,25 @@
     var i = kv.indexOf('=');
     if (i > 0) hash[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
   });
-  var API_URL = hash.u || store('u');
-  var KEY = hash.k || store('k');
+  // 接続先の候補: URLの # にあるもの → この端末が覚えているもの の順に試す。
+  // 端末の記憶を上書きするのは、つながったときだけ（古いデプロイのURLが入ったリンクを開いても、記憶が壊れないように）
+  var CANDIDATES = [];
+  if (hash.u && hash.k) CANDIDATES.push({ u: hash.u, k: hash.k });
+  if (store('u') && store('k') && !(hash.u === store('u') && hash.k === store('k'))) {
+    CANDIDATES.push({ u: store('u'), k: store('k') });
+  }
+  var API_URL = CANDIDATES.length ? CANDIDATES[0].u : '';
+  var KEY = CANDIDATES.length ? CANDIDATES[0].k : '';
   var FOCUS = hash.focus || '';
-  if (hash.u && hash.k) { store('u', hash.u); store('k', hash.k); }
-  // 通知から開いたときの focus はブックマークに残したくないので外しておく
-  if (API_URL && KEY && history.replaceState) {
-    history.replaceState(null, '', location.pathname + '#u=' + encodeURIComponent(API_URL) + '&k=' + KEY);
+  function adopt(c) {
+    API_URL = c.u;
+    KEY = c.k;
+    store('u', c.u);
+    store('k', c.k);
+    // 通知から開いたときの focus はブックマークに残したくないので外しておく
+    if (history.replaceState) {
+      history.replaceState(null, '', location.pathname + '#u=' + encodeURIComponent(c.u) + '&k=' + c.k);
+    }
   }
   var FIRST_RUN = !store('seenSetup');
   if (FIRST_RUN) document.body.classList.add('first-run');
@@ -348,6 +363,8 @@
       setupLoaded = true;
       call('api_getSetupInfo').then(function (info) {
         document.getElementById('topic').textContent = info.topic || '（未作成）';
+        document.getElementById('viaLine').classList.toggle('hidden', info.via !== 'line');
+        document.getElementById('viaNtfy').classList.toggle('hidden', info.via === 'line');
         document.getElementById('sheetLink').href = info.sheetUrl;
         document.getElementById('appUrl').textContent = info.appUrl || '（まだわからない。一度閉じて開き直してみて）';
         document.getElementById('holidayNote').textContent = info.holidayOk
@@ -376,7 +393,7 @@
     call('api_testNotify').then(function () {
       st.textContent = '送ったよ。届いた？';
       store('seenSetup', '1');
-    }, function () { st.textContent = '送れなかった…'; });
+    }, function (e) { st.textContent = '送れなかった…（' + String(e && e.message || e) + '）'; });
   };
 
   // ---- 起動
@@ -387,12 +404,24 @@
       'わからなくなったら、Apps Script のエディタで <code>showUrl</code> を実行するとログに出るよ。</p>';
     throw new Error('no config');
   }
-  if (FIRST_RUN) {
-    document.getElementById('setupTitle').textContent = 'はじめまして。あと少しで準備おわり';
-    toggleSetup(true);
+  // 候補を順に試して、最初につながったものを使う
+  function connect(i) {
+    API_URL = CANDIDATES[i].u;
+    KEY = CANDIDATES[i].k;
+    return call('api_init').then(function (init) {
+      adopt(CANDIDATES[i]);
+      return init;
+    }, function (e) {
+      if (i + 1 < CANDIDATES.length) return connect(i + 1);
+      throw e;
+    });
   }
 
-  call('api_init').then(function (init) {
+  connect(0).then(function (init) {
+    if (FIRST_RUN) {
+      document.getElementById('setupTitle').textContent = 'はじめまして。あと少しで準備おわり';
+      toggleSetup(true);
+    }
     state.today = init.today;
     state.thisWeek = init.thisWeek;
     // 通知から開いたときはその内容に合わせる。普通に開いたときは夕方以降なら明日のページ
